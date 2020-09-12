@@ -94,12 +94,42 @@ MIN, MAX = Parameter(0.1), Parameter(100)
 import Random.rand
 
 Random.rand(rng::AbstractRNG, ::Random.SamplerType{Rectangle}) =
-    let vals = rand(r, 2),
+    let vals = rand(2),
         vals = MIN() .+ vals .* (MAX() - MIN())
         vals = round.(vals, digits=2)
-        color = rand(r, instances(Color), 1)[1]
+        color = rand(instances(Color), 1)[1]
 
         Rectangle(0, 0, vals..., color)
     end
 
 rand(Rectangle)
+
+
+
+# Task 2. Loop
+# - Generate random rectangle
+# - Read user's input
+# - Associate it to rectangle
+# - Store
+
+macro until(condition, expression)
+    quote
+        while !($condition)
+            $expression
+        end
+    end |> esc
+end
+
+
+
+
+
+let user_input = ""
+    @until user_input == "quit" begin
+        println("Generating rectangle...")
+        rectangle = rand(Rectangle)
+        println(rectangle)
+        print("Do you like it? (1=yes, 0=no)\n > ")
+        user_input = parse(Int, readline(stdin))
+    end
+end
