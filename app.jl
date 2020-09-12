@@ -51,6 +51,8 @@ with(f, p, newvalue, others...) =
     with(f, others...)
   end
 
+# min max values for width and height parameters of the rectangle
+MIN, MAX = Parameter(0.1), Parameter(100)
 
 # Task 1. Randomly generate rectangles
 # Each rectangle is generated based on 4 different inputs:
@@ -82,15 +84,16 @@ struct Rectangle
 end
 
 Rectangle() = Rectangle(0, 0)
-Rectangle(x, y) = Rectangle(x, y, 1, 1, )
+Rectangle(x, y) = Rectangle(x, y, 1, 1, black)
 
+# Note: Since the color elements do not have an ordinal relation amongst
+# them, I've decided not to transform the color into an integer and,
+# instead, leave that transformation/indexing for the downstream task.
+# Some algorithms might explore the semantic existing in the name of
+# the colors.
+as_array(r::Rectangle) = [r.x, r.y, r.width, r.height, r.color]
 
 using Random
-Random.seed!(1234567)
-
-# min max values for width and height parameters of the rectangle
-MIN, MAX = Parameter(0.1), Parameter(100)
-
 import Random.rand
 
 Random.rand(rng::AbstractRNG, ::Random.SamplerType{Rectangle}) =
@@ -102,34 +105,50 @@ Random.rand(rng::AbstractRNG, ::Random.SamplerType{Rectangle}) =
         Rectangle(0, 0, vals..., color)
     end
 
-rand(Rectangle)
-
-
-
 # Task 2. Loop
 # - Generate random rectangle
 # - Read user's input
 # - Associate it to rectangle
 # - Store
 
-macro until(condition, expression)
-    quote
-        while !($condition)
-            $expression
-        end
-    end |> esc
-end
+# Task 2.1. Store rectangles, label / user_input
+# The goal is to have a way of representing the properties of the rectangles
+# (also called features) in a matrix format and associate it to the user's
+# input (also called the label).
+#
+# The properties of the Rectangles will be represented in a column format
+#  <x, y, width, height, color> and it will be associated to a label <like_it>
+#
+# To achieve this, we're creating a specialization of the generic method
+# push! which receives a rectangle and adds its properties to the specified
+# matrix.
+import Base: push!
+
+push!(X::Array{T, 1}, rect::Rectangle) where T =
+    let features = as_array(rect)
+        push!(X, features)
+    end
+
+# Task 2.2. Persist it
 
 
 
+using Random
+Random.seed!(1234567)
 
-
-let user_input = ""
-    @until user_input == "quit" begin
+let user_input = "",
+    X = Array{Any, 1}[],
+    y = Vector{Int64}()
+    while true
         println("Generating rectangle...")
         rectangle = rand(Rectangle)
         println(rectangle)
         print("Do you like it? (1=yes, 0=no)\n > ")
-        user_input = parse(Int, readline(stdin))
+        user_input = readline(stdin)
+
+        if user_input == "quit" break end
+        user_input = parse(Int, user_input)
+        push!(X, rectangle)
+        push!(y, user_input)
     end
 end
