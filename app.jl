@@ -91,7 +91,7 @@ Rectangle(x, y) = Rectangle(x, y, 1, 1, black)
 # instead, leave that transformation/indexing for the downstream task.
 # Some algorithms might explore the semantic existing in the name of
 # the colors.
-as_array(r::Rectangle) = [r.x, r.y, r.width, r.height, r.color]
+as_array(r::Rectangle) = [r.x r.y r.width r.height r.color]
 
 using Random
 import Random.rand
@@ -122,33 +122,57 @@ Random.rand(rng::AbstractRNG, ::Random.SamplerType{Rectangle}) =
 # To achieve this, we're creating a specialization of the generic method
 # push! which receives a rectangle and adds its properties to the specified
 # matrix.
-import Base: push!
 
-push!(X::Array{T, 1}, rect::Rectangle) where T =
-    let features = as_array(rect)
-        push!(X, features)
+mutable struct Dataset
+    X:: Matrix{Any}
+    y:: Matrix{Int64}
+end
+
+Dataset(n_features, n_labels) =
+    let X = Array{Any, 2}(undef, 0, n_features),
+        y = Array{Int64, 2}(undef, 0, n_labels)
+        Dataset(X, y)
+    end
+
+import Base.push!
+
+push!(data::Dataset, obj, label) =
+    let features = as_array(obj)
+        data.X = [data.X; features]
+        data.y = [data.y; label]
     end
 
 # Task 2.2. Persist it
+using DelimitedFiles
+filename = Parameter("data.csv")
 
-
+persist(dataset::Dataset) =
+    let X = dataset.X,
+        y = dataset.y
+        open(filename(), "w") do io
+            writedlm(io, [X y])
+        end
+    end
 
 using Random
 Random.seed!(1234567)
 
-let user_input = "",
-    X = Array{Any, 1}[],
-    y = Vector{Int64}()
-    while true
-        println("Generating rectangle...")
-        rectangle = rand(Rectangle)
-        println(rectangle)
-        print("Do you like it? (1=yes, 0=no)\n > ")
-        user_input = readline(stdin)
+n_tries = Parameter(1000)
 
-        if user_input == "quit" break end
-        user_input = parse(Int, user_input)
-        push!(X, rectangle)
-        push!(y, user_input)
+let label = "",
+    data = Dataset(5, 1)
+    for i in 1:10000
+        let rectangle = rand(Rectangle)
+
+            println("Iteration $i: $rectangle")
+            print("Do you like it? (1=yes, 0=no, q=quit)\n > ")
+            label = readline(stdin)
+            if label == "q"
+                persist(data)
+                break
+            end
+            label = parse(Int, label)
+            push!(data, rectangle, label)
+        end
     end
 end
