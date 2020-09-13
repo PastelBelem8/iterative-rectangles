@@ -144,9 +144,8 @@ mutable struct OneHotIndexer <: Indexer
     values::Dict{Literal, String}
 end
 
-OneHotIndexer(feature_id::Literal, data::Dataset) =
-    let feature = get_feature(data, feature_id)
-        u_values = unique(feature),
+OneHotIndexer(feature_id::Literal, feature) =
+    let u_values = unique(feature),
         u_ids = 1:length(unique_values),
         values = map((v, id) -> v => id, u_values, u_ids)
         OneHotIndexer(feature_id, Dict(values))
@@ -198,33 +197,26 @@ transform(indexer::LabelIndexer, feature) =
 mutable struct Dataset
     X:: Matrix{Any}
     y:: Matrix{Int64}
-    cat_indexers::Dict{Int64, Indexer}
+    categoricals::Vector{Int64}
 end
 
 Dataset(n_features, n_labels) =
     let X = Array{Any, 2}(undef, 0, n_features),
         y = Array{Int64, 2}(undef, 0, n_labels)
-        Dataset(X, y, Dict())
+        Dataset(X, y)
     end
 
 n_features(data::Dataset) = size(data, 2)
-n_instances(data::Dataset) = size(data, 1)
+n_rows(data::Dataset) = size(data, 1)
 
-categoricals(data::Dataset) = keys(data.cat_indexers)
+categoricals(data::Dataset) = data.categoricals
 numericals(data::Dataset) = setdiff(1:n_features(data), categoricals(data))
 
-get_data(data::Dataset) =
-    let cat_ixs = data.cat_indexers,
-        categoricals = categoricals(data),
-        categoricals_ixs = map(f -> get(cat_ixs, f)(f, data), categoricals),
-        categorical_data = map(ix -> transform(ix, data), categoricals_ixs),
-        numericals = numericals(data),
-        numerical_data = map(i -> X[:,i], data.X)
-        hcat(numerical_data... categorical_data...)
-    end
-
+get_data(data::Dataset) = data.X
 get_label(data::Dataset) = data.y
 get_feature(name, data::Dataset) = data.X[:,name]
+get_features_names(data::Dataset, except=nothing) =
+    except === nothing ? Set(1:n_features(data)) : setdiff(Set(1:n_features(data)), Set(except))
 
 filter_by_y(data::Dataset, predicate::function) =
     if isempty(data)
@@ -259,29 +251,26 @@ write(dataset::Dataset) =
         end
     end
 
-#=
-using Random
-Random.seed!(1234567)
+transform(indexer::Indexer, feature_id, Xs...) =
+    let all_features = size(2, Xs[1]),
+        features = map(X -> X[:, feature_id], Xs),
+        indexer = indexer(feature_id, features[1]),
 
-let label = "",
-    data = Dataset(5, 1)
-    for i in 1:10000
-        let rectangle = rand(Rectangle)
+        transf_features = map((f) -> transform(indexer, f), features),
+        non_transf_features = setdiff(Set(1:all_features), feature_id),
 
-            println("Iteration $i: $rectangle")
-            print("Do you like it? (1=yes, 0=no, q=quit)\n > ")
-            label = readline(stdin)
-            if label == "q"
-                persist(data)
-                break
-            end
-            label = parse(Int, label)
-            push!(data, rectangle, label)
-        end
+        transf_matrices = map(X -> X[:, non_transf_features], Xs),
+        transf_matrices = map((M, T) -> [M T], transf_matrices, transf_features)
+
+        transf_matrices
     end
-end
-=#
 
+transform(indexers::Vector{Indexer}, features_id, Xs) =
+    foldl((Xs, (ix, f_id)) -> transform(ix, f_id, Xs), zip(indexers, features_id), Xs)
+
+#
+#   Main Loop
+#
 iterative_rectangles(shape, generate, draw, prompt, parser, seed::Int, max_attempts::Int) =
     let label = "",
         n_features = n_features(shape),
@@ -341,15 +330,29 @@ end
 #     Generates random rectangles returns the one which maximizes the
 #     cosine similarity to those already liked by the user.
 using Distances
+
 n_samples = Parameter(50)
 distance_metric = Parameter(CosineDist())
+indexers = Parameter(Dict(
+        5 => LabelIndexer, # Color will be indexed
+))
+
 
 generate_similar(dataset, iter, object_type) =
     let n_samples = n_samples(),
         samples = rand(object_type, n_samples),
         dataset = filter_by_y(dataset, (y) -> y == 1),
-        X = get_data(),
-        y = get_label()
+        X = get_data(dataset),
+        y = get_label(dataset),
+        X_samples_indexed =
+        samples_indexed
+
+        pairwise(distance_metric(), X, samples)
+        # Generate samples
+        # fit_transform dataset
+        # transform samples (if necessary)
+        # compute pairwise similarity between dataset and samples
+        #
     end
 
 with(filename, "data_random.csv") do
