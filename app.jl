@@ -334,25 +334,33 @@ using Distances
 n_samples = Parameter(50)
 distance_metric = Parameter(CosineDist())
 indexers = Parameter(Dict(
-        5 => LabelIndexer, # Color will be indexed
+        5 => LabelIndexer, # Color (feature 5) will be indexed
 ))
 
-
+# Generate samples
+# fit_transform dataset
+# transform samples (if necessary)
+# compute pairwise similarity between dataset and samples
+#
 generate_similar(dataset, iter, object_type) =
     let n_samples = n_samples(),
         samples = rand(object_type, n_samples),
+        # TODO -- transform into array Ss = map(as_array, samples)
+
         dataset = filter_by_y(dataset, (y) -> y == 1),
         X = get_data(dataset),
         y = get_label(dataset),
-        X_samples_indexed =
-        samples_indexed
+        # Indexing
+        (features, idxs) = indexers(),
+        (X_indexed, samples_indexed) = transform(idxs, features, X, samples),
 
-        pairwise(distance_metric(), X, samples)
-        # Generate samples
-        # fit_transform dataset
-        # transform samples (if necessary)
-        # compute pairwise similarity between dataset and samples
-        #
+        # This yields an sm x s matrix
+        distances = pairwise(distance_metric(), X_indexed', samples_indexed'),
+        distances_sum = mapslices(sum, distances, dims=2),
+
+        # Pick
+        sample_ix = argmax(distances_sum),
+        samples[sample_ix]
     end
 
 with(filename, "data_random.csv") do
