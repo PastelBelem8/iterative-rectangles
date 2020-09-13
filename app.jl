@@ -86,6 +86,8 @@ end
 Rectangle() = Rectangle(0, 0)
 Rectangle(x, y) = Rectangle(x, y, 1, 1, black)
 
+n_features(::Type{Rectangle}) = 5
+
 # Note: Since the color elements do not have an ordinal relation amongst
 # them, I've decided not to transform the color into an integer and,
 # instead, leave that transformation/indexing for the downstream task.
@@ -154,10 +156,9 @@ persist(dataset::Dataset) =
         end
     end
 
+#=
 using Random
 Random.seed!(1234567)
-
-n_tries = Parameter(1000)
 
 let label = "",
     data = Dataset(5, 1)
@@ -176,3 +177,32 @@ let label = "",
         end
     end
 end
+=#
+
+simple_draw(object) =
+    print("\n$object \n Do you like the object above? (1=yes, 0=no, q=quit)\n > ")
+
+int_parser(input) = tryparse(Int64, input)
+
+
+iterative_rectangles(shape, random, draw, parser, seed::Int, max_attempts::Int) =
+    let label = "",
+        n_features = n_features(shape),
+        data = Dataset(n_features, 1)
+
+        for i in 1:max_attempts
+            let object = random(shape)
+                draw(object)
+                label = parser(readline(stdin))
+                if label === nothing
+                    persist(data)
+                    break
+                end
+                push!(data, object, label)
+            end
+        end
+    end
+
+using Random
+Random.seed!(1234567)
+iterative_rectangles(Rectangle, rand, simple_draw, int_parser, 42, 1000)
