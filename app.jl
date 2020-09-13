@@ -141,7 +141,7 @@ cardinality(indexer::Indexer) = length(values(ix.values))
 output_columns(indexer::Indexer) =
     map((v) -> "$(ix.feature_id)_$v", keys(ix.values))
 
-function transform(indexer::Indexer, data::Dataset) end
+function transform(indexer::Indexer, feature) end
 
 
 mutable struct OneHotIndexer <: Indexer
@@ -164,7 +164,7 @@ transform(indexer::OneHotIndexer, feature) =
         one_hot_matrix = zeros(Int8, n_rows, cardinality),
         one_hot_values = map(f -> get(indexer.values, f), feature)
 
-        for row_ix, row_col in zip(1:n_rows, one_hot_values)
+        for (row_ix, row_col) in zip(1:n_rows, one_hot_values)
             one_hot_matrix[row_ix, row_col] = 1
         end
         one_hot_matrix
@@ -223,17 +223,6 @@ get_feature(name, data::Dataset) = data.X[:,name]
 get_features_names(data::Dataset, except=nothing) =
     except === nothing ? Set(1:n_features(data)) : setdiff(Set(1:n_features(data)), Set(except))
 
-filter_by_y(data::Dataset, predicate::function) =
-    if isempty(data)
-        data
-    else let X = data.X,
-             y = data.y,
-             n_instances = size(X, 1),
-             ixs = filter((i) -> predicate(y[i,:]), 1:n_instances)
-             Dataset(X[ixs,:], y[ixs,:])
-         end
-    end
-
 import Base: push!, isempty
 
 Base.push!(data::Dataset, obj, label) =
@@ -244,6 +233,17 @@ Base.push!(data::Dataset, obj, label) =
 
 Base.isempty(data::Dataset) = isempty(data.X) && isempty(data.y)
 
+filter_by_y(data::Dataset, predicate) =
+    if isempty(data)
+        data
+    else
+        let X = data.X,
+            y = data.y,
+            n_instances = size(X, 1),
+            ixs = filter((i) -> predicate(y[i,:]), 1:n_instances)
+            Dataset(X[ixs,:], y[ixs,:])
+         end
+    end
 
 using DelimitedFiles
 filename = Parameter("data.csv")
@@ -349,25 +349,24 @@ indexers = Parameter(Dict(
 generate_similar(dataset, iter, object_type) =
     let n_samples = n_samples(),
         samples = rand(object_type, n_samples),
-        S = vcat(map(as_array, samples)...)
-
+        S = vcat(map(as_array, samples)...),
         dataset = filter_by_y(dataset, (y) -> y == 1),
         X = get_data(dataset),
         y = get_label(dataset),
         # Indexing
         (features, idxs) = indexers(),
         (X_indexed, samples_indexed) = transform(idxs, features, X, S),
-
         # This yields an sm x s matrix
-        distances = pairwise(distance_metric(), X_indexed', samples_indexed'),
+        dist_metric = distance_metric(),
+        distances = pairwise(dist_metric, X_indexed', samples_indexed'),
         distances_sum = mapslices(sum, distances, dims=2),
 
         # Pick
-        sample_ix = argmax(distances_sum),
+        sample_ix = argmax(distances_sum)
         samples[sample_ix]
     end
 
-with(filename, "data_random.csv") do
+with(filename, "data_similar.csv") do
     Random.seed!(1234567)
     iterative_rectangles(
         Rectangle, generate_similar, cli_draw, cli_input, simple_parser, 42, 1000
