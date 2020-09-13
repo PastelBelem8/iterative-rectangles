@@ -113,6 +113,11 @@ Random.rand(rng::AbstractRNG, ::Random.SamplerType{Rectangle}) =
         Rectangle(0, 0, vals..., color)
     end
 
+
+rand(Rectangle)
+rand(Rectangle, 2)
+
+
 # ------------------------------------------------------------------------
 # Task 2. Create the Read-Eval-Print Loop
 # ------------------------------------------------------------------------
@@ -341,18 +346,17 @@ indexers = Parameter(Dict(
 # fit_transform dataset
 # transform samples (if necessary)
 # compute pairwise similarity between dataset and samples
-#
 generate_similar(dataset, iter, object_type) =
     let n_samples = n_samples(),
         samples = rand(object_type, n_samples),
-        # TODO -- transform into array Ss = map(as_array, samples)
+        S = vcat(map(as_array, samples)...)
 
         dataset = filter_by_y(dataset, (y) -> y == 1),
         X = get_data(dataset),
         y = get_label(dataset),
         # Indexing
         (features, idxs) = indexers(),
-        (X_indexed, samples_indexed) = transform(idxs, features, X, samples),
+        (X_indexed, samples_indexed) = transform(idxs, features, X, S),
 
         # This yields an sm x s matrix
         distances = pairwise(distance_metric(), X_indexed', samples_indexed'),
