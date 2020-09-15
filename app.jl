@@ -64,7 +64,9 @@ end
 
 size_enum(x) = length(instances(x))
 
-struct Rectangle
+abstract type Shape end
+
+struct Rectangle <: Shape
     x::Real
     y::Real
     width::Real
@@ -86,10 +88,12 @@ import Random.rand
 
 MIN = Parameter(0)
 MAX = Parameter(1000)
+DIGITS = Parameter(0)
 
 Random.rand(rng::AbstractRNG, ::Random.SamplerType{Rectangle}) =
-    let vals = rand(2), vals = MIN() .+ vals .* (MAX() - MIN())
-        vals = round.(vals, digits = 2)
+    let vals = rand(2),
+        vals = MIN() .+ vals .* (MAX() - MIN())
+        vals = round.(vals, digits = DIGITS())
         color = rand(instances(Color), 1)[1]
 
         Rectangle(0, 0, vals..., color)
@@ -131,6 +135,9 @@ labels_one_hot_enc(r::Rectangle) =
         color_labels = collect(color_labels)
         ["x", "y", "width", "height", color_labels...]
     end
+
+get_data(Rs::Vector{T}, repr=identity) where {T <: Shape} =
+    vcat(map(repr, Rs)...)
 
 #=
 labels(r)
@@ -178,8 +185,10 @@ Dataset{Rectangle}()
 d = Dataset{Rectangle}()
 =#
 
-get_data(d::Dataset, repr=identity) = repr(d.X)
+get_data(d::Dataset, repr=identity) = get_data(d.X, repr)
 get_label(d::Dataset, repr=identity) = repr(d.y)
+
+get_n_rows(d::Dataset) = length(d.y)
 
 filter_by_label(d::Dataset{T}, pred) where T =
     if isempty(d)
@@ -207,7 +216,7 @@ Base.push!(d::AbstractDataset, obj, label) =
         push!(d.y, label)
     end
 
-Base.isempty(data::Dataset) = isempty(data.X) && isempty(data.y)
+Base.isempty(data::AbstractDataset) = isempty(data.X) && isempty(data.y)
 
 #=
 d = Dataset{Rectangle}()
@@ -222,7 +231,7 @@ filename = Parameter("data.csv")
 
 import Base: write
 
-write(d::Dataset) =
+write(d::T) where {T <: AbstractDataset} =
     let Xs = get_data(d),
         Xs = map(as_array, Xs),
         Xs = vcat(Xs...),
@@ -236,7 +245,7 @@ write(d::Dataset) =
 #
 #   Main Loop
 #
-# 
+#
 iterative_rectangles(
     shape,
     generate,
@@ -248,15 +257,15 @@ iterative_rectangles(
 ) =
     let label = "",
         n_features = n_features(shape),
-        data = Dataset(n_features, 1, categoricals(shape))
+        data = Dataset{shape}()
 
         for i = 1:max_attempts
             let object = generate(data, i, shape)
                 draw(object)
-                label = parser(prompt())
+                label = parser(prompt(), prompt)
                 if label === nothing
                     write(data)
-                    break
+                    return
                 end
                 push!(data, object, label)
             end
@@ -281,7 +290,11 @@ cli_input() = begin
     print("Do you like the shape above? (1=yes, 0=no)\n > ")
     readline(stdin)
 end
-simple_parser(input::String) = tryparse(Int64, input)
+simple_parser(input::String, prompt=identity) =
+    input == "quit" ? nothing :
+        let n = tryparse(Int8, input)
+            n === nothing || n != 0 && n != 1 ? simple_parser(prompt(), prompt) : n
+        end
 
 # Second, we're going to define the generators:
 # --> Heuristic 1: Random Rectangle
@@ -289,8 +302,6 @@ simple_parser(input::String) = tryparse(Int64, input)
 generate_random(dataset, iter, object_type) = rand(object_type)
 
 
-
-#=
 using Random
 Random.seed!(1234567)
 
@@ -300,51 +311,69 @@ with(filename, "data_random.csv") do
         Rectangle, generate_random, cli_draw, cli_input, simple_parser, 42, 1000
     )
 end
-=#
+
 # --> Heuristic 2: Perturbations + Similarity
 #     Generates random rectangles returns the one which maximizes the
 #     cosine similarity to those already liked by the user.
 using Distances
 
-bootstrap_samples = Parameter(1)
-n_samples = Parameter(50)
+# number of random samples to generate and to compare when searching for
+# best one
+n_perturbations = Parameter(100)
+# number of samples to generate using random generator
+# (before applying fancy algorithm)
+bootstrap_samples = Parameter(5)
+
+# similarity metric
 distance_metric = Parameter(CosineDist())
-indexers = Parameter(Dict(
-    5 => LabelIndexer, # Color (feature 5) will be indexed
-))
+
+# rectangle representation function
+repr_fn = Parameter(as_array_label_enc)
 
 
-# Generate samples
-# fit_transform dataset
-# transform samples (if necessary)
-# compute pairwise similarity between dataset and samples
-generate_similar(dataset, iter, object_type) =
-    if n_rows(dataset) <= bootstrap_samples()
-        generate_random(dataset, iter, object_type)
+generate_similar(d, iter, object_type) =
+    if get_n_rows(d) <= bootstrap_samples()
+        generate_random(d, iter, object_type)
     else
-        let n_samples = n_samples(),
-            samples = rand(object_type, n_samples),
-            S = vcat(map(as_array, samples)...),
-            dataset = filter_by_y(dataset, (y) -> y == 1),
-            X = get_data(dataset),
-            y = get_label(dataset),
-            # Indexing
-            features_lst = collect(keys(indexers())),
-            indexers_lst = map(f -> get(indexers(), f, nothing), features_lst),
-            (X_indexed, samples_indexed) = transform(indexers_lst, features_lst, (X, S)...),
+        println("generate_similar")
+        let positive_labels = y -> y == 1,
+            # Generate perturbations
+            perturbations = rand(object_type, n_perturbations()),
+            dataset = filter_by_label(d, positive_labels),
+
+            # Transform both samples and perturbations
+            perturbations_enc = get_data(perturbations, repr_fn()),
+            dataset_enc = get_data(dataset, repr_fn())
+
             # This yields an sm x s matrix
-            dist_metric = distance_metric(),
-            distances = pairwise(dist_metric, X_indexed', samples_indexed'),
-            distances_sum = mapslices(sum, distances, dims = 2),
+            dist_metric = distance_metric()
+            distances = pairwise(dist_metric, dataset_enc', perturbations_enc')
+            distances_sum = mapslices(sum, distances, dims = 2)
 
             # Pick
-            sample_ix = argmax(distances_sum)
-            samples[sample_ix]
+            p_ix = argmin(distances_sum)
+            perturbations[p_ix]
         end
     end
+#=
+# Label encoding (by default -> colors are represented by numbers)
+with(filename, "data_similar_label_enc.csv") do
+    Random.seed!(1234567)
+    iterative_rectangles(
+        Rectangle,
+        generate_similar,
+        cli_draw,
+        cli_input,
+        simple_parser,
+        42,
+        1000,
+    )
+end
+=#
 
 
-with(filename, "data_similar.csv") do
+# Label encoding (by default -> colors are represented by numbers)
+with(filename, "data_similar_1enc.csv") do
     Random.seed!(1234567)
     iterative_rectangles(
         Rectangle,
