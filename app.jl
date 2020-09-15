@@ -391,3 +391,15 @@ end
 #     - Clustering (after achieving rectangles above a certain amount
 #        of rectangles) - how to determine number of clusters??
 #     - ML to generate around the clusters the user likes the most.
+
+
+# TODO
+# - Weight different columns
+# - Normalize different columns (cosine similarity is being strongly driven by differences in width and height)
+# - EMA (last liked examples count more)
+# - Clustering after some level
+# - Provide the ability to provide a set of rectangles a priori
+# - Generative models
+#       - NB (& Bayesian approaches)
+#       - NNs
+#       - ...
